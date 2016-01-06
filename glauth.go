@@ -74,6 +74,7 @@ type configUser struct {
 	PrimaryGroup int
 	SSHKeys      []string
 	UnixID       int
+	Mail		 string
 }
 type configGroup struct {
 	Name   string
