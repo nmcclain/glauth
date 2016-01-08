@@ -88,7 +88,7 @@ func (h configHandler) Bind(bindDN, bindSimplePw string, conn net.Conn) (resultC
 	}
 
 	// finally, validate user's pw
-	geturl, err := url.Parse(h.cfg.Backend.authURL)
+	geturl, err := url.Parse(h.cfg.Backend.AuthURL)
 	if err != nil {
 		log.Error(fmt.Sprintf("error:%s", err))
 	}

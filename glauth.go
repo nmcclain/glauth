@@ -52,7 +52,7 @@ type configBackend struct {
 	Insecure  bool     // For LDAP backend only
 	Servers   []string // For LDAP backend only
 	Home      string
-	authURL   string
+	AuthURL   string
 }
 type configFrontend struct {
 	AllowedBaseDNs []string // For LDAP backend only
