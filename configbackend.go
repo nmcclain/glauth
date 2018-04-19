@@ -3,14 +3,25 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"github.com/fatih/structs"
 	"github.com/nmcclain/ldap"
+	"io/ioutil"
 	"net"
+	"net/http"
+	"net/url"
 	"strings"
 )
 
 type configHandler struct {
 	cfg *config
+}
+
+type ServiceAuth struct {
+	Ret    bool   `json:"ret"`
+	Ticket string `json:"ticket"`
+	Error  string `json:"error"`
 }
 
 func newConfigHandler(cfg *config) Backend {
@@ -77,6 +88,46 @@ func (h configHandler) Bind(bindDN, bindSimplePw string, conn net.Conn) (resultC
 	}
 
 	// finally, validate user's pw
+	geturl, err := url.Parse(h.cfg.Backend.AuthURL)
+	if err != nil {
+		log.Error(fmt.Sprintf("error:%s", err))
+	}
+	s := structs.New(user)
+	mailfield := s.Field("Mail")
+	mail := mailfield.Value().(string)
+	log.Debug(fmt.Sprintf("mail:%s", mail))
+	//pwfield := s.Field("bindSimplePw")
+	//pw := pwfield.Value().(string)
+	//log.Debug(fmt.Sprintf("pw:%s", pw))
+	v := url.Values{}
+	v.Set("service", "login")
+	v.Set("username", mail)
+	v.Set("password", bindSimplePw)
+	v.Set("token", "")
+	geturl.RawQuery = v.Encode()
+	log.Debug(geturl.String())
+	resp, err := http.Get(geturl.String())
+	if err != nil {
+		log.Error("cas http get failed: %s", err)
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Error("cas http read failed: %s", err)
+	}
+	log.Debug(fmt.Sprintf("body:%s", body))
+	var ret ServiceAuth
+	err = json.Unmarshal(body, &ret)
+	if err != nil {
+		log.Error("cas http json failed: %s", err)
+	}
+	log.Debug(fmt.Sprintf("ret: %+v", ret))
+	if ret.Ret == true {
+		stats_frontend.Add("bind_successes", 1)
+		log.Debug("Bind success (CAS) as %s from  %s", bindDN, conn.RemoteAddr().String())
+		return ldap.LDAPResultSuccess, nil
+	}
+	// try the old way.
 	hash := sha256.New()
 	hash.Write([]byte(bindSimplePw))
 	if user.PassSHA256 != hex.EncodeToString(hash.Sum(nil)) {
@@ -84,7 +135,7 @@ func (h configHandler) Bind(bindDN, bindSimplePw string, conn net.Conn) (resultC
 		return ldap.LDAPResultInvalidCredentials, nil
 	}
 	stats_frontend.Add("bind_successes", 1)
-	log.Debug("Bind success as %s from %s", bindDN, conn.RemoteAddr().String())
+	log.Debug("Bind success (LOCAL) as %s from %s", bindDN, conn.RemoteAddr().String())
 	return ldap.LDAPResultSuccess, nil
 }
 
@@ -132,11 +183,17 @@ func (h configHandler) Search(bindDN string, searchReq ldap.SearchRequest, conn 
 			attrs := []*ldap.EntryAttribute{}
 			attrs = append(attrs, &ldap.EntryAttribute{"cn", []string{u.Name}})
 			attrs = append(attrs, &ldap.EntryAttribute{"uid", []string{u.Name}})
+			attrs = append(attrs, &ldap.EntryAttribute{"mail", []string{u.Mail}})
+			attrs = append(attrs, &ldap.EntryAttribute{"displayName", []string{u.DisplayName}})
 			attrs = append(attrs, &ldap.EntryAttribute{"ou", []string{h.getGroupName(u.PrimaryGroup)}})
 			attrs = append(attrs, &ldap.EntryAttribute{"uidNumber", []string{fmt.Sprintf("%d", u.UnixID)}})
 			attrs = append(attrs, &ldap.EntryAttribute{"accountStatus", []string{"active"}})
 			attrs = append(attrs, &ldap.EntryAttribute{"objectClass", []string{"posixAccount"}})
-			attrs = append(attrs, &ldap.EntryAttribute{"homeDirectory", []string{"/home/" + u.Name}})
+			if u.HomeDirectory != "" {
+				attrs = append(attrs, &ldap.EntryAttribute{"homeDirectory", []string{u.HomeDirectory}})
+			} else {
+				attrs = append(attrs, &ldap.EntryAttribute{"homeDirectory", []string{h.cfg.Backend.Home + u.Name}})
+			}
 			attrs = append(attrs, &ldap.EntryAttribute{"loginShell", []string{"/bin/bash"}})
 			attrs = append(attrs, &ldap.EntryAttribute{"description", []string{fmt.Sprintf("%s via LDAP", u.Name)}})
 			attrs = append(attrs, &ldap.EntryAttribute{"gecos", []string{fmt.Sprintf("%s via LDAP", u.Name)}})

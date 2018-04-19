@@ -51,6 +51,8 @@ type configBackend struct {
 	Datastore string
 	Insecure  bool     // For LDAP backend only
 	Servers   []string // For LDAP backend only
+	Home      string
+	AuthURL   string
 }
 type configFrontend struct {
 	AllowedBaseDNs []string // For LDAP backend only
@@ -68,12 +70,15 @@ type configAPI struct {
 	TLS         bool
 }
 type configUser struct {
-	Name         string
-	OtherGroups  []int
-	PassSHA256   string
-	PrimaryGroup int
-	SSHKeys      []string
-	UnixID       int
+	Name          string
+	OtherGroups   []int
+	PassSHA256    string
+	PrimaryGroup  int
+	SSHKeys       []string
+	UnixID        int
+	Mail          string
+	DisplayName   string
+	HomeDirectory string
 }
 type configGroup struct {
 	Name   string
@@ -199,6 +204,9 @@ func doConfig() (*config, error) {
 	if cfg.Debug {
 		logging.SetLevel(logging.DEBUG, programName)
 		log.Debug("Debugging enabled")
+	}
+	if cfg.Backend.Home == "" {
+		cfg.Backend.Home = "/home/"
 	}
 	switch cfg.Backend.Datastore {
 	case "":
