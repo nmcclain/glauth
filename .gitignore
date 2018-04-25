@@ -1,5 +1,0 @@
-# Ignore default config file for testing
-glauth.cfg
-
-# Ignore the built binary during testing
-glauth
